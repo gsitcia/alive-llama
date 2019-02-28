@@ -1,0 +1,166 @@
+<html>
+	<head>
+		<title>Electromagnet</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r11/Stats.min.js"></script>
+	</head>
+	<body>
+		<script src="three.js"></script>
+		<script>
+			var scene = new THREE.Scene();
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 50 );
+      camera.position.set(1.5,3,22);
+      camera.lookAt(0,0,0);
+      
+      var mouseX = 0,mouseY = 0;
+      var xzangle = 0;
+
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+      document.body.appendChild( renderer.domElement );
+      
+      var starsGeometry = new THREE.BufferGeometry();
+      
+      const NUMSTARS = 1234;
+      var starPoints = new Float32Array(NUMSTARS*3);
+      var starColors = new Float32Array(NUMSTARS*3);
+      
+      var newStar = function() {
+        return new THREE.Vector3(THREE.Math.randFloatSpread(15),THREE.Math.randFloatSpread(8),THREE.Math.randFloatSpread(15));
+      }
+      
+      var colors = [];
+
+      for ( var i = 0; i < NUMSTARS; i ++ ) {
+
+        var star = newStar();
+
+        starsGeometry.vertices.push( star );
+        starColors[i]
+      }
+      
+      //starsGeometry._bufferGeometry.addAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+      /*for (var i = 0; i < NUMSTARS; i++) {
+        starsGeometry.colors[i]=new THREE.Color(Math.random(),Math.random(),Math.random());
+      };
+      starsGeometry.colorsNeedUpdate=true;*/
+
+      var starsMaterial = new THREE.PointsMaterial( { vertexColors: THREE.VertexColors } );
+      //starsMaterial.sizeAttenuation=false;
+      starsMaterial.size=0.2;
+
+      var starField = new THREE.Points( starsGeometry, starsMaterial );
+
+      scene.add( starField );
+      
+      var lineMaterial = new THREE.LineBasicMaterial({color: 0x008888});
+      lineMaterial.linewidth=5;
+      var lineGeometry = new THREE.Geometry();
+      
+      var addLoop = function(start,end,direction) {
+        direction.normalize();
+        var d = start.clone();
+        d.sub(end);
+        var p = end.clone();
+        for (var i = 0; i < 8; i++) {
+          p.add(d);
+          lineGeometry.vertices.push(p.clone());
+          d.applyAxisAngle(direction,-Math.PI/4);
+        }
+      }
+      
+      var simplified = function(x,z) {
+        addLoop(new THREE.Vector3(x,1,z),new THREE.Vector3(x,-1,z),new THREE.Vector3(-z,0,x));
+      }
+      
+      var r2 = Math.sqrt(2);
+      
+      var NLOOPS = 10;
+      
+      for (var i = 0; i < NLOOPS; i++) {
+        simplified(2*Math.sin(i*Math.PI*2/NLOOPS),2*Math.cos(i*Math.PI*2/NLOOPS))
+      }
+      lineGeometry.vertices.push(new THREE.Vector3(0,1,2));
+      var line = new THREE.Line(lineGeometry,lineMaterial);
+      scene.add(line);
+      
+      var magic = function(p) {
+        if (Math.random() > 0.989) {//half life of 62 frames
+          var q = newStar();
+          p.set(q.x,q.y,q.z);
+        }
+        var ov = new THREE.Vector3(0,0,0);
+        for (var i = 1; i < lineGeometry.vertices.length; i++) {
+          var v = lineGeometry.vertices[i-1].clone();
+          var swirld = lineGeometry.vertices[i].clone();
+          //line.localToWorld(v);//these are slow
+          //line.localToWorld(swirld);
+          swirld.sub(v);
+          v.subVectors(p,v);
+          var q = v.clone();
+          v.cross(swirld);
+          v.divideScalar(q.dot(q));
+          ov.add(v);
+        }
+        ov.divideScalar(1-lineGeometry.vertices.length);
+        p.add(ov);
+        return ov.length();
+      }
+      
+      var change = function() {
+        //swirld.applyAxisAngle(new THREE.Vector3(1,0,0),0.005);
+        //swirld.applyAxisAngle(new THREE.Vector3(0,1,0),0.004);
+        //swirld.normalize();
+        for (var i = 0; i < NUMSTARS; i++) {
+          //starsGeometry.vertices[i] = 
+          var v = Math.tanh(5*magic(starsGeometry.vertices[i]));
+          //var v = magic(starsGeometry.vertices[i]);
+          //v.multiplyScalar(10);
+          //starsGeometry.colors[i].setRGB(Math.tanh(v.x)*0.5+0.5,Math.tanh(v.y)*0.5+0.5,Math.tanh(v.z)*0.5+0.5);
+          starsGeometry.colors[i].setRGB(v,0.5,1-v);
+        }
+        starsGeometry.verticesNeedUpdate=true;
+        starsGeometry.colorsNeedUpdate=true;
+        lineGeometry.verticesNeedUpdate=true;
+      }
+      
+      var animate = function () {
+				requestAnimationFrame( animate );
+        change();
+        //line.rotation.x += 0.01;
+        xzangle -= (xzangle-mouseX)*0.05;
+        camera.position.y -= (camera.position.y-mouseY)*0.05;
+        camera.position.x = 12*Math.sin(xzangle);
+        camera.position.z = -12*Math.cos(xzangle);
+        camera.lookAt(0,0,0);
+        renderer.render( scene, camera );
+        stats.update();
+			};
+      
+      var resize = function() {
+        camera.aspect=window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth,window.innerHeight);
+      }
+      
+      var stats = new Stats();
+      stats.domElement.style.position='absolute';
+      stats.domElement.style.top=0;
+      stats.domElement.style.right=0;
+      document.body.appendChild(stats.domElement);
+      
+      window.addEventListener('resize',resize,false);
+      
+      document.addEventListener('click',change);
+      document.addEventListener('mousemove',function(e) {
+        mouseX = 2*Math.PI*(e.clientX/window.innerWidth-0.5);
+        mouseY = 42*(e.clientY/window.innerHeight-0.5);
+      });
+
+			animate();
+		</script>
+	</body>
+</html>
