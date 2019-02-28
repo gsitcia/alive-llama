@@ -6,6 +6,7 @@
 			canvas { width: 100%; height: 100% }
 		</style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r11/Stats.min.js"></script>
+    <script src="https://cdn.rawgit.com/gpujs/gpu.js/45103b7f154a12ec639990c6896b21a053eb6a6c/bin/gpu.min.js"></script>
 	</head>
 	<body>
 		<script src="three.js"></script>
@@ -22,23 +23,32 @@
 			renderer.setSize( window.innerWidth, window.innerHeight );
       document.body.appendChild( renderer.domElement );
       
-      var starsGeometry = new THREE.Geometry();
+      var starsGeometry = new THREE.BufferGeometry();
       
       const NUMSTARS = 1234;
+      var starPoints = new Float32Array(NUMSTARS*3);
+      var starColors = new Float32Array(NUMSTARS*3);
       
       var newStar = function() {
         return new THREE.Vector3(THREE.Math.randFloatSpread(15),THREE.Math.randFloatSpread(8),THREE.Math.randFloatSpread(15));
       }
       
-      var colors = [];
-
       for ( var i = 0; i < NUMSTARS; i ++ ) {
 
         var star = newStar();
-
-        starsGeometry.vertices.push( star );
-        starsGeometry.colors.push(new THREE.Color(1,1,1));
+        
+        starPoints[3*i]=star.x;
+        starPoints[3*i+1]=star.y;
+        starPoints[3*i+2]=star.z;
+        starColors[3*i]=1;
+        starColors[3*i+1]=1;
+        starColors[3*i+2]=1;
       }
+      
+      starsGeometry.addAttribute('position',new THREE.Float32BufferAttribute(starPoints,3));
+      starsGeometry.addAttribute('color',new THREE.Float32BufferAttribute(starColors,3));
+      starsGeometry.attributes.position.setDynamic(true);
+      starsGeometry.attributes.color.setDynamic(true);
       
       //starsGeometry._bufferGeometry.addAttribute('color',new THREE.Float32BufferAttribute(colors,3));
       /*for (var i = 0; i < NUMSTARS; i++) {
@@ -74,8 +84,6 @@
         addLoop(new THREE.Vector3(x,1,z),new THREE.Vector3(x,-1,z),new THREE.Vector3(-z,0,x));
       }
       
-      var r2 = Math.sqrt(2);
-      
       var NLOOPS = 10;
       
       for (var i = 0; i < NLOOPS; i++) {
@@ -85,44 +93,69 @@
       var line = new THREE.Line(lineGeometry,lineMaterial);
       scene.add(line);
       
-      var magic = function(p) {
-        if (Math.random() > 0.989) {//half life of 62 frames
-          var q = newStar();
-          p.set(q.x,q.y,q.z);
+      var gpu = new GPU();
+      
+      // this function returns the velocity + the given velocity
+      // the reasoning is to call this for every point on the coil
+      // the magic velocity is d x a / d * d, with d the difference, and a the current
+      // under this, the strength of the magnetic field properly scales with the current
+      var getVel = gpu.createKernel(function(ps,x,y,z,ax,ay,az,ov,n) {
+        let m = this.thread.x%3;
+        let i = this.thread.x-m;
+        let dx = x-ps[i];
+        let dy = y-ps[i+1];
+        let dz = z-ps[i+2];
+        let d = n*(dx*dx+dy*dy+dz*dz);
+        if (m == 0) {
+          return ov[this.thread.x]+(dy*az-dz*ay)/d;
         }
-        var ov = new THREE.Vector3(0,0,0);
-        for (var i = 1; i < lineGeometry.vertices.length; i++) {
-          var v = lineGeometry.vertices[i-1].clone();
-          var swirld = lineGeometry.vertices[i].clone();
-          //line.localToWorld(v);//these are slow
-          //line.localToWorld(swirld);
-          swirld.sub(v);
-          v.subVectors(p,v);
-          var q = v.clone();
-          v.cross(swirld);
-          v.divideScalar(q.dot(q));
-          ov.add(v);
+        if (m == 1) {
+          return ov[this.thread.x]+(dz*ax-dx*az)/d;
         }
-        ov.divideScalar(1-lineGeometry.vertices.length);
-        p.add(ov);
-        return ov.length();
-      }
+        return ov[this.thread.x]+(dx*ay-dy*ax)/d;
+      }).setOutput([NUMSTARS*3]);
+      
+      var newPoints = gpu.createKernel(function(ps,vs) {
+        return ps[this.thread.x]+vs[this.thread.x];
+      }).setOutput([NUMSTARS*3]);
+      
+      var getColors = gpu.createKernel(function(vs) {
+        let m = this.thread.x%3;
+        let i = this.thread.x-m;
+        let s = Math.exp(-vs[i]*vs[i]-vs[i+1]*vs[i+1]-vs[i+2]*vs[i+2])
+        s = (1-s)/(1+s);
+        if (m == 0) {
+          return s;
+        }
+        if (m == 1) {
+          return 0.5;
+        }
+        return 1-s;
+      }).setOutput([NUMSTARS*3]);
       
       var change = function() {
-        //swirld.applyAxisAngle(new THREE.Vector3(1,0,0),0.005);
-        //swirld.applyAxisAngle(new THREE.Vector3(0,1,0),0.004);
-        //swirld.normalize();
-        for (var i = 0; i < NUMSTARS; i++) {
-          //starsGeometry.vertices[i] = 
-          var v = Math.tanh(5*magic(starsGeometry.vertices[i]));
-          //var v = magic(starsGeometry.vertices[i]);
-          //v.multiplyScalar(10);
-          //starsGeometry.colors[i].setRGB(Math.tanh(v.x)*0.5+0.5,Math.tanh(v.y)*0.5+0.5,Math.tanh(v.z)*0.5+0.5);
-          starsGeometry.colors[i].setRGB(v,0.5,1-v);
+        var v = new Float32Array(NUMSTARS*3);
+        for (var i = 0; i < lineGeometry.vertices.length-1; i++) {
+          var p = lineGeometry.vertices[i];
+          var a = lineGeometry.vertices[i+1].clone();
+          a.sub(p);
+          a.normalize();
+          v = getVel(starPoints,p.x,p.y,p.z,a.x,a.y,a.z,v,lineGeometry.vertices.length-1);
         }
-        starsGeometry.verticesNeedUpdate=true;
-        starsGeometry.colorsNeedUpdate=true;
-        lineGeometry.verticesNeedUpdate=true;
+        starPoints = newPoints(starPoints,v);
+        starColors = getColors(v);
+        //starsGeometry.attributes.position.setArray(starPoints);
+        //starsGeometry.attributes.color.setArray(starColors);
+        for (var i = 0; i < NUMSTARS; i++) {
+          starsGeometry.attributes.position.array[3*i]=starPoints[3*i];
+          starsGeometry.attributes.position.array[3*i+1]=starPoints[3*i+1];
+          starsGeometry.attributes.position.array[3*i+2]=starPoints[3*i+2];
+          starsGeometry.attributes.color.array[3*i]=starColors[3*i];
+          starsGeometry.attributes.color.array[3*i+1]=starColors[3*i+1];
+          starsGeometry.attributes.color.array[3*i+2]=starColors[3*i+2];
+        }
+        starsGeometry.attributes.position.needsUpdate=true;
+        starsGeometry.attributes.color.needsUpdate=true;
       }
       
       var animate = function () {

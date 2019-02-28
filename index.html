@@ -22,11 +22,9 @@
 			renderer.setSize( window.innerWidth, window.innerHeight );
       document.body.appendChild( renderer.domElement );
       
-      var starsGeometry = new THREE.BufferGeometry();
+      var starsGeometry = new THREE.Geometry();
       
       const NUMSTARS = 1234;
-      var starPoints = new Float32Array(NUMSTARS*3);
-      var starColors = new Float32Array(NUMSTARS*3);
       
       var newStar = function() {
         return new THREE.Vector3(THREE.Math.randFloatSpread(15),THREE.Math.randFloatSpread(8),THREE.Math.randFloatSpread(15));
@@ -39,7 +37,7 @@
         var star = newStar();
 
         starsGeometry.vertices.push( star );
-        starColors[i]
+        starsGeometry.colors.push(new THREE.Color(1,1,1));
       }
       
       //starsGeometry._bufferGeometry.addAttribute('color',new THREE.Float32BufferAttribute(colors,3));
