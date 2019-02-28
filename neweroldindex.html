@@ -1,0 +1,120 @@
+<html>
+	<head>
+		<title>My first three.js app</title>
+		<style>
+			body { margin: 0; }
+			canvas { width: 100%; height: 100% }
+		</style>
+	</head>
+	<body>
+		<script src="three.js"></script>
+		<script>
+			var scene = new THREE.Scene();
+			var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 50 );
+      camera.position.set(16,3,6);
+      camera.lookAt(0,0,0);
+
+			var renderer = new THREE.WebGLRenderer();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+      document.body.appendChild( renderer.domElement );
+      
+      var starsGeometry = new THREE.Geometry();
+      
+      const NUMSTARS = 7777;
+      
+      var newStar = function() {
+        var s = 20;
+        return new THREE.Vector3(THREE.Math.randFloatSpread( s ),THREE.Math.randFloatSpread( s ),THREE.Math.randFloatSpread( s ));
+      }
+      
+      var colors = [];
+
+      for ( var i = 0; i < NUMSTARS; i ++ ) {
+
+        var star = newStar();
+
+        starsGeometry.vertices.push( star );
+        starsGeometry.colors.push(new THREE.Color(1,1,1));
+      }
+      
+      //starsGeometry._bufferGeometry.addAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+      /*for (var i = 0; i < NUMSTARS; i++) {
+        starsGeometry.colors[i]=new THREE.Color(Math.random(),Math.random(),Math.random());
+      };
+      starsGeometry.colorsNeedUpdate=true;*/
+
+      var starsMaterial = new THREE.PointsMaterial( { vertexColors: THREE.VertexColors } );
+      //starsMaterial.sizeAttenuation=false;
+      starsMaterial.size=0.2;
+
+      var starField = new THREE.Points( starsGeometry, starsMaterial );
+
+      scene.add( starField );
+      
+      var swirlp = new THREE.Vector3(0,0,0);
+      var swirld = new THREE.Vector3(0,0,1);
+      //var swirlv = new THREE.Vector3(0,0,0);
+      swirld.normalize();
+      
+      var lineMaterial = new THREE.LineBasicMaterial({color: 0x008888});
+      var lineGeometry = new THREE.Geometry();
+      lineGeometry.vertices.push(swirlp.clone());
+      lineGeometry.vertices.push(swirld.clone());
+      lineGeometry.vertices[1].add(swirlp);
+      var line = new THREE.Line(lineGeometry,lineMaterial);
+      scene.add(line);
+      
+      var magic = function(p) {
+        if (Math.random() > 0.99) {
+          var q = newStar();
+          p.set(q.x,q.y,q.z);
+        }
+        var v = swirlp.clone();
+        //d.normalize();
+        v.subVectors(p,v);
+        var q = v.clone();
+        v.cross(swirld);
+        v.divideScalar(q.dot(q));
+        p.add(v);
+        //p.multiplyScalar(0.9995);
+        return v.length();
+      }
+      
+      var change = function() {
+        //swirlv.add(new THREE.Vector3(0.01*Math.random(),0.01*Math.random(),0.01*Math.random()));
+        //swirlv.multiplyScalar(0.9);
+        //swirld.applyAxisAngle(new THREE.Vector3(1,0,0),0.005);
+        //swirld.applyAxisAngle(new THREE.Vector3(0,1,0),0.004);
+        //swirld.normalize();
+        lineGeometry.vertices[1]=swirld.clone();
+        lineGeometry.vertices[1].add(swirlp);
+        for (var i = 0; i < NUMSTARS; i++) {
+          //starsGeometry.vertices[i] = 
+          var v = Math.tanh(5*magic(starsGeometry.vertices[i]));
+          starsGeometry.colors[i].setRGB(v,0.5,1-v);
+        }
+        starsGeometry.verticesNeedUpdate=true;
+        starsGeometry.colorsNeedUpdate=true;
+        lineGeometry.verticesNeedUpdate=true;
+      }
+      
+      var animate = function () {
+				requestAnimationFrame( animate );
+        change();
+        renderer.render( scene, camera );
+			};
+      
+      var resize = function() {
+        camera.aspect=window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth,window.innerHeight);
+      }
+      
+      window.addEventListener('resize',resize,false);
+      
+      document.addEventListener('click',change);
+
+			animate();
+		</script>
+	</body>
+</html>
